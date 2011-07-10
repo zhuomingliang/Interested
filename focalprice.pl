@@ -27,7 +27,7 @@ sub get_category_urls {
 		}
 	}
 
-	open(OUTFILE, "> cateogries.txt");
+	open(OUTFILE, ">> cateogries.txt");
 	print OUTFILE join "\n", @category_urls;
         close(OUTFILE);
 }
