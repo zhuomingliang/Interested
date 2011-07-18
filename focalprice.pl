@@ -14,14 +14,14 @@ sub get_category_urls {
 	foreach my $url_id (@url_ids) {
 		$url = "http://www.focalprice.com/goodsort_${url_id}_1_h.html";
 
-		$mech->get($url);
+		eval { $mech->get($url) };
 
-                if ($mech->success() && $mech->status() == 200 && $mech->content() =~ /pageCount\s\=\s"(\d+)"/ ) {
+		if($@) {
+			print $url, "\n";
+		}elsif ($mech->success() && $mech->status() == 200 && $mech->content() =~ /pageCount\s\=\s"(\d+)"/ ) {
 			for (my $i = 1; $i <= $1; $i++ ) {
 				push @category_urls, "http://www.focalprice.com/goodsort_${url_id}_${i}_h.html";
-
 			}
-
                 } else {
 			print $url, "\n";
 		}
@@ -50,9 +50,12 @@ sub get_product_urls {
 		my $mech = WWW::Mechanize->new();
 		print "getting Line $line ", $url, "...";
 
-		$mech->get($url);
+		eval { $mech->get($url) };
 
-		if ($mech->success() && $mech->status() == 200) {
+		if($@) {
+			print "failed\n";
+			push @failed_lists, $url;
+		}elsif ($mech->success() && $mech->status() == 200) {
 			print "success\n";
 			@products =  $mech->content() =~ /<ul\s+class\="infoBox">\s*<li\s+class\="proImg">\s*<a\s+href\="([^"]+)">/g;
 			print OUTFILE join "\n", @products;
@@ -71,4 +74,41 @@ sub get_product_urls {
         close(OUTFILE);
 }
 
-get_product_urls;
+sub get_product {
+	open(OUTFILE, "< products.txt");
+	my $line = 1;
+	my @failed_lists;
+	while(<OUTFILE>) {
+		my $mech = WWW::Mechanize->new();
+		print "getting Line $line ", $_, "...";
+
+		my ($SKU) = $_ =~ /com\/([^\/]+)/;
+		print $SKU, "\n";
+
+		eval { $mech->get($_) };
+
+		if($@) {
+			print "failed\n";
+			push @failed_lists, $_;
+                } elsif ($mech->success() && $mech->status() == 200) {
+			print "success\n";
+			my ($price) = $mech->content() =~ /Priceus">\s*\$([\d\.]+)/;
+			print $price, "\n";
+
+			#@products =  $mech->content() =~ /<ul\s+class\="infoBox">\s*<li\s+class\="proImg">\s*<a\s+href\="([^"]+)">/g;
+			#print OUTFILE join "\n", @products;
+			#print OUTFILE "\n";
+		} else {
+			print "failed\n";
+			push @failed_lists, $_;
+		}
+	
+		$line++;
+        }
+
+#	$/ = undef;
+#	my $category_urls = <OUTFILE>;
+#       close(OUTFILE);
+	
+}
+get_product;
