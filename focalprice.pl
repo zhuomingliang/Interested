@@ -6,6 +6,13 @@ use utf8;
 use WWW::Mechanize;
 use DBI;
 
+sub trim($) {
+	my $string = shift;
+	$string =~ s/^\s+//;
+	$string =~ s/\s+$//;
+	return $string;
+}
+
 sub get_category_urls {
 	my $mech = WWW::Mechanize->new();
 	my @url_ids = ( 9, 83, 102, 59, 11, 1, 12, 109, 42, 122, 8, 40 );
@@ -109,15 +116,36 @@ print $title, "\n";
 			my ($price) = $content =~ /Priceus">\s*\$([\d\.]+)/s;
 			print $price, "\n";
 			my (@category) = $content =~ /[^>]+>([^<]+)<\s*\/a\s*>\s*>\s*/sg;
-print join ' > ', @category;
-print "\n";
+			shift @category;
+			my $parent = 0;
+			foreach (@category) {
+				$_ = trim $_;
+				my $sth = $dbh->prepare('SELECT * FROM category_description where name=?');
+				$sth->execute($_);
+ 				my @row = $sth->fetchrow_array;
+				if(!@row) {
+					$sth = $dbh->prepare('INSERT INTO category(`parent_id`, `top`, `column`, `status`) VALUES(?, ?, ?, ?)');
+					$sth->execute($parent, 1, 1, 1);
+					$parent = $dbh->last_insert_id(undef, undef, undef, undef);
+					$sth = $dbh->prepare('INSERT INTO category_description(`category_id`, `language_id`, `name`) VALUES(?, ?, ?)');
+					$sth->execute($parent, 1, $_);
+					$sth = $dbh->prepare('INSERT INTO category_to_store(`category_id`, `store_id`) VALUES(?, ?)');
+					$sth->execute($parent, 0);
+				} else {
+					$parent = shift @row;
+				}
+			}
+		
+#print join ' > ', @category;
+#print "\n";
 			my (@pics) = $content =~ /registerImage\("alt_image_\d+", "([^"]+)/sg;
 
+			my $sth = $dbh->prepare('SELECT * FROM category_description where name=?');
 print join "\n", @pics;
 print "\n";
 			my ($desc) = $content =~ /class="goods_text">(.*)<\/div>\s*<div\s+style="padding:10px;">/s;
 
-print $desc;
+#print $desc;
 			my ($desc_more) = $content =~ /<div\s+style="padding:10px;">(.*)<\/div>\s*<\/div>\s*<div\s+class="TabContent"/s;
 			$desc_more =~ s/×/x/sg;
 print $desc_more;
@@ -141,3 +169,5 @@ exit;
 	
 }
 get_product;
+
+
