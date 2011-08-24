@@ -95,7 +95,16 @@ sub get_product {
 		my $mech = WWW::Mechanize->new();
 		print "getting Line $line ", $_, "...";
 
+		$line++;
+
 		my ($SKU) = $_ =~ /com\/([^\/]+)/;
+		my $sth = $dbh->prepare('SELECT * FROM product where sku=?');
+		$sth->execute($SKU);
+ 		my @row = $sth->fetchrow_array;
+		if(@row) {
+			next;
+		} 
+
 		print $SKU, "\n";
 
 		eval { $mech->get($_) };
@@ -106,15 +115,25 @@ sub get_product {
                 } elsif ($mech->success() && $mech->status() == 200) {
 			my $content = $mech->content();
 			if ($content =~ /tocart12/) { # out of stock
+				#my $sth = $dbh->prepare('DELETE FROM category_description where sku=?');
+				#$sth->execute($SKU);
 				print "skipped\n";
 				next;
 			}
 
 			print "success\n";
 			my ($title) = $content =~ /<title>([^<]+)<\/title>/s;
+			next if(!$title);
 print $title, "\n";
 			my ($price) = $content =~ /Priceus">\s*\$([\d\.]+)/s;
+			next if(!$price);
 			print $price, "\n";
+
+			$sth = $dbh->prepare('INSERT INTO product(`sku`, `price`) VALUES(?, ?)');
+			$sth->execute($SKU, $price);
+
+			my $product_id = $dbh->last_insert_id(undef, undef, undef, undef);
+
 			my (@category) = $content =~ /[^>]+>([^<]+)<\s*\/a\s*>\s*>\s*/sg;
 			shift @category;
 			my $parent = 0;
@@ -135,12 +154,20 @@ print $title, "\n";
 					$parent = shift @row;
 				}
 			}
-		
+			$sth = $dbh->prepare('INSERT INTO product_to_category(`product_id`, `category_id`) VALUES(?, ?)');
+			$sth->execute($product_id, $parent);
+			$sth = $dbh->prepare('INSERT INTO product_to_store(`product_id`, `store_id`) VALUES(?, ?)');
+			$sth->execute($product_id, 0);
+	
 #print join ' > ', @category;
 #print "\n";
 			my (@pics) = $content =~ /registerImage\("alt_image_\d+", "([^"]+)/sg;
 
-			my $sth = $dbh->prepare('SELECT * FROM category_description where name=?');
+			foreach(@pics) {
+				$sth = $dbh->prepare('INSERT INTO product_image(`product_id`, `image`) VALUES(?, ?)');
+				$sth->execute($product_id, $_);
+			}
+
 print join "\n", @pics;
 print "\n";
 			my ($desc) = $content =~ /class="goods_text">(.*)<\/div>\s*<div\s+style="padding:10px;">/s;
@@ -149,25 +176,39 @@ print "\n";
 			my ($desc_more) = $content =~ /<div\s+style="padding:10px;">(.*)<\/div>\s*<\/div>\s*<div\s+class="TabContent"/s;
 			$desc_more =~ s/×/x/sg;
 print $desc_more;
+			$sth = $dbh->prepare('INSERT INTO product_description(`product_id`, `name`, `description`) VALUES(?, ?, ?)');
+			$sth->execute($product_id, $title, $desc . '<br />' . $desc_more);
+			
 			#@products =  $mech->content() =~ /<ul\s+class\="infoBox">\s*<li\s+class\="proImg">\s*<a\s+href\="([^"]+)">/g;
 			#print OUTFILE join "\n", @products;
 			#print OUTFILE "\n";
 			my (@wholesale_price) = $content =~ /<td>\s*<font\s+color='#ff6600'>\s*\$\s*([^<]+)/sg;
+			my @unit = (3,5,10);
+			my $i = 0;
+			foreach(@wholesale_price) {
+				$sth = $dbh->prepare('INSERT INTO product_discount(`product_id`, `quantity`, `price`) VALUES(?, ?, ?)');
+				$sth->execute($product_id, $unit[$i], $_);
+				++$i;
+			}
+	
 print join ' ', @wholesale_price;
-exit;
+			
 		} else {
 			print "failed\n";
 			push @failed_lists, $_;
 		}
-	
-		$line++;
         }
+
+	close(OUTFILE);
+
+	open(OUTFILE, "> product_fails.txt");
+	print OUTFILE join "\n", @failed_lists;
+        close(OUTFILE);
 
 #	$/ = undef;
 #	my $category_urls = <OUTFILE>;
 #       close(OUTFILE);
 	
 }
+
 get_product;
-
-
